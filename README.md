@@ -36,8 +36,8 @@ Installation
 
     bash
 
-git clone https://github.com/yourusername/ultimate-vulnerability-scanner.git
-cd ultimate-vulnerability-scanner
+git clone https://github.com/TFourie30/WebBuster.git
+cd WebBuster.py
 
 Install required dependencies:
 
@@ -51,7 +51,7 @@ To run the script, specify the target URL in the TARGET_URL variable at the top 
 
 bash
 
-python ultimate_vulnerability_scanner.py
+python WebBuster.py
 
 Example
 
@@ -65,7 +65,7 @@ Run the scan:
 
 bash
 
-python ultimate_vulnerability_scanner.py
+python WebBuster.py
 
 The results will be saved in a JSON report file, ultimate_vulnerability_report.json, in the project directory.
 APIs Used
