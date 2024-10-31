@@ -1,4 +1,3 @@
-markdown
 # WebBuster
 
 This Python script performs a comprehensive vulnerability scan on a specified website using multiple APIs, including OWASP ZAP, Shodan, VirusTotal, and SSL Labs. The script also includes checks for missing security headers, subdomain enumeration, port scanning, and CVE-based exploit lookups. It generates a consolidated report of the findings in JSON format.
