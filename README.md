@@ -101,4 +101,7 @@ WebBuster is intended for educational and testing purposes only. It is the respo
 ## Contributing
 
 Contributions to WebBuster are welcome! If you would like to add more functionalities or improve the code, feel free to submit a pull request.
+
+## Author
+This script is maintained by Tobias Fourie.
 ```
