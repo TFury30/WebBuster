@@ -69,7 +69,7 @@ Run the scan:
 python WebBuster.py
 ```
 
-The results will be saved in a JSON report file, `ultimate_vulnerability_report.json`, in the project directory.
+The results will be saved in a JSON report file, `WebBuster_vulnerability_report.json`, in the project directory.
 
 ## APIs Used
 
