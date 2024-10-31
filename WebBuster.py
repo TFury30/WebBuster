@@ -144,7 +144,7 @@ def generate_report(zap_data, shodan_data, virustotal_data, ssl_data, headers_da
     }
     return report
 
-def save_report(report_data, file_name='ultimate_vulnerability_report.json'):
+def save_report(report_data, file_name='WebBuster_vulnerability_report.json'):
     """Saves the final report data to a JSON file."""
     try:
         with open(file_name, 'w') as f:
